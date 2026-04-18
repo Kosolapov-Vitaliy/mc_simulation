@@ -96,9 +96,5 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
             }
         }
         pathway.push_back(Coordinate(photon.x, photon.y, photon.z));
-        //if(!photon.Alive())
-
-        
-
     }
 }
