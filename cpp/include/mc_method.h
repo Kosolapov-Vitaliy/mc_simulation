@@ -2,17 +2,27 @@
 #define MC_METHOD_H
 
 #include <photon.h>
+#include <coordinate.h>
 #include <biotissue.h>
 #include <rund_num_generate.h>
 
-class MCMethod {
-private:
 
-public:
+double SQRTcoef(double dz) {
+    return std::sqrt(1 - dz * dz);
+}
 
-};
+double CalcDX(double sin_tt, double cos_tt, double sin_fi, double cos_fi,
+    double dx, double dy, double dz) {
+    return ((sin_tt / SQRTcoef(dz)) * (dx * dz * cos_fi - dy * sin_fi)) + dx * cos_tt;
+}
 
-void RunMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& generator);
-int CrossBoundary(const Biotissue& biotissue, Photon& photon, RNGenerate& generator,
-    double remaining_step, int layer_idx, double& new_step, bool& is_out);
+double CalcDY(double sin_tt, double cos_tt, double sin_fi, double cos_fi,
+    double dx, double dy, double dz) {
+    return ((sin_tt / SQRTcoef(dz)) * (dy * dz * cos_fi + dx * sin_fi)) + dy * cos_tt;
+}
+double CalcDZ(double sin_tt, double cos_tt, double cos_fi, double dz) {
+    return -sin_tt * cos_fi * SQRTcoef(dz) + dz * cos_tt;
+}
+double CalcFRCoef(double dz, double n_i, double n_t);
+void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& generator, std::vector<Coordinate>& pathway);
 #endif // !MC_METHOD_H
