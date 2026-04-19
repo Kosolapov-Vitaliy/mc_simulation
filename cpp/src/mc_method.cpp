@@ -19,7 +19,8 @@ double CalcFRCoef(double dz, double n_i, double n_t) {
     }
 }
 
-void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& generator, std::vector<Coordinate>& pathway) {
+void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& generator,
+    std::vector<Coordinate>& pathway) {
     int layer_idx = 0;
     pathway.push_back(Coordinate(photon.x, photon.y, photon.z));
     while (photon.Alive()) {
@@ -96,5 +97,16 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
             }
         }
         pathway.push_back(Coordinate(photon.x, photon.y, photon.z));
+    }
+}
+
+void RunSimulation(const Biotissue& biotissue, const Photon& photon, int num_photons,
+    std::vector<std::vector<Coordinate>>& trajectorys) {
+    RNGenerate generator = RNGenerate();
+    for (int i = 0; i < num_photons; i++) {
+        std::vector<Coordinate> cur_pathway;
+        Photon cur_photon = photon;
+        RunOneIterMCM(biotissue, cur_photon, generator, cur_pathway);
+        trajectorys.push_back(cur_pathway);
     }
 }
