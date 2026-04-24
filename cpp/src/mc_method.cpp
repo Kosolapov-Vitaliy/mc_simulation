@@ -47,7 +47,7 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
         photon.y = photon.y + step * photon.dy;
         photon.z = photon.z + step * photon.dz;
         photon.weight = photon.weight * cur_layer.mu_a * cur_layer.l;
-        if (photon.z <= cur_layer.z_bot && photon.z >= cur_layer.z_top) {
+        if (photon.z <= cur_layer.z_bot || photon.z >= cur_layer.z_top) {
             double nec_z =0.0;
             bool flag = false;
             bool up = false;

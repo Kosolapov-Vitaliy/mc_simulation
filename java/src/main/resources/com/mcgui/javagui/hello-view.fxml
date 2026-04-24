@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ProgressBar?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Tab?>
+<?import javafx.scene.control.TabPane?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.chart.LineChart?>
+<?import javafx.scene.chart.NumberAxis?>
+
+<TabPane maxHeight="1050.0" maxWidth="1980.0" minHeight="400.0" minWidth="600.0" tabClosingPolicy="UNAVAILABLE" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.mcgui.javagui.GUIController">
+    <tabs>
+        <Tab text="Настройка параметров">
+            <content>
+                <AnchorPane>
+                    <!-- Верхняя панель: поле ввода числа фотонов -->
+                    <HBox spacing="10" AnchorPane.topAnchor="10" AnchorPane.leftAnchor="10" AnchorPane.rightAnchor="10">
+                        <Label text="Число фотонов:" />
+                        <TextField fx:id="photonsField" text="100000" HBox.hgrow="ALWAYS" />
+                    </HBox>
+
+                    <!-- ScrollPane с контейнером слоёв -->
+                    <ScrollPane fx:id="layerScroll" AnchorPane.topAnchor="50" AnchorPane.bottomAnchor="110" AnchorPane.leftAnchor="10" AnchorPane.rightAnchor="10" fitToWidth="true">
+                        <content>
+                            <VBox fx:id="layerContainer" spacing="10" />
+                        </content>
+                    </ScrollPane>
+
+                    <!-- Прогресс и кнопки внизу -->
+                    <VBox spacing="5" AnchorPane.bottomAnchor="10" AnchorPane.leftAnchor="10" AnchorPane.rightAnchor="10">
+                        <Label fx:id="progressLabel" text="Готов к запуску" />
+                        <ProgressBar fx:id="progressBar" progress="0.0" prefWidth="Infinity" />
+                        <HBox alignment="CENTER" spacing="15">
+                            <Button fx:id="adLayerButton" text="Добавить слой" />
+                            <Button fx:id="startSimButton" text="Запустить симуляцию" />
+                        </HBox>
+                    </VBox>
+                </AnchorPane>
+            </content>
+        </Tab>
+        <Tab text="График траектории">
+            <content>
+                <AnchorPane>
+                    <LineChart fx:id="trajectoryChart" AnchorPane.topAnchor="10" AnchorPane.bottomAnchor="10" AnchorPane.leftAnchor="10" AnchorPane.rightAnchor="10">
+                        <xAxis>
+                            <NumberAxis fx:id="xAxis" label="X, мм" />
+                        </xAxis>
+                        <yAxis>
+                            <NumberAxis fx:id="yAxis" label="Z, мм" />
+                        </yAxis>
+                    </LineChart>
+                </AnchorPane>
+            </content>
+        </Tab>
+    </tabs>
+</TabPane>

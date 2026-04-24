@@ -9,6 +9,7 @@ class Biotissue {
 private:
     std::vector<Layer> tissue;
 public:
+    Biotissue() = default;
     Biotissue(const Biotissue& bio) { tissue = bio.tissue; }
     const Biotissue& operator=(const Biotissue& bio) { tissue = bio.tissue; }
     void AddLayer(const Layer& layer) { tissue.push_back(layer); }
