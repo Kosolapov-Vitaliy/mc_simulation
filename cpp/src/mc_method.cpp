@@ -1,4 +1,5 @@
 #include <mc_method.h>
+#include <iostream>
 
 
 double CalcFRCoef(double dz, double n_i, double n_t) {
@@ -7,14 +8,14 @@ double CalcFRCoef(double dz, double n_i, double n_t) {
     if (alpha_i == 0) {
         return ((n_t - n_i) / (n_t + n_i)) * ((n_t - n_i) / (n_t + n_i));
     }
-    else if (alpha_i > 0 && alpha_i <= std::acos(n_i / n_t)) {
-        double sum_sin = alpha_i + alpha_t;
-        double asg_sin = alpha_i - alpha_t;
-        double sum_tg = alpha_i + alpha_t;
-        double asg_tg = alpha_i - alpha_t;
+    else if (alpha_i > 0 && alpha_i <= std::asin(n_i / n_t)) {
+        double sum_sin =std::sin(alpha_i + alpha_t);
+        double asg_sin = std::sin(alpha_i - alpha_t);
+        double sum_tg = std::tan(alpha_i + alpha_t);
+        double asg_tg = std::tan(alpha_i - alpha_t);
         return (1 / 2) * (((asg_sin * asg_sin) / (sum_sin * sum_sin)) + ((asg_tg * asg_tg) / (sum_tg * sum_tg)));
     }
-    else if (alpha_i > std::acos(n_i / n_t)) {
+    else if (alpha_i > std::asin(n_i / n_t)) {
         return 1;
     }
 }
@@ -22,8 +23,13 @@ double CalcFRCoef(double dz, double n_i, double n_t) {
 void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& generator,
     std::vector<Coordinate>& pathway) {
     int layer_idx = 0;
+    double z_min = photon.z;
+    double photon_start = photon.z;
     pathway.push_back(Coordinate(photon.x, photon.y, photon.z));
-    while (photon.Alive()) {
+    std::cout << "New PathWay Coordinate 0:"  << photon.x << " " << photon.y << " " << photon.z<<"\n";
+    double start_weight = photon.weight;
+    int i = 1;
+    while (photon.Alive(start_weight)) {
         const Layer cur_layer = biotissue[layer_idx];
         double step = generator.LengthGenerate(cur_layer.l);
         double fi = generator.FiGenerate();
@@ -31,6 +37,7 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
         double sin_tetta = std::sqrt(1 - cos_tetta * cos_tetta);
         double cos_fi = std::cos(fi);
         double sin_fi = std::sin(fi);
+        double z_max = cur_layer.thickness + z_min;
         if (std::fabs(photon.dz) > 0.99999)
         {
             double sign_dz = photon.dz / (std::fabs(photon.dz));
@@ -43,21 +50,26 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
             photon.dy = CalcDY(sin_tetta, cos_tetta, sin_fi, cos_fi, photon.dx, photon.dy, photon.dz);
             photon.dz = CalcDZ(sin_tetta, cos_tetta, cos_fi, photon.dz);
         }
+        //double norm = std::sqrt(photon.dx * photon.dx + photon.dy * photon.dy + photon.dz * photon.dz);
+        //photon.dx /= norm;
+        //photon.dy /= norm;
+        //photon.dz /= norm;
+
         photon.x = photon.x + step * photon.dx;
         photon.y = photon.y + step * photon.dy;
         photon.z = photon.z + step * photon.dz;
-        photon.weight = photon.weight * cur_layer.mu_a * cur_layer.l;
-        if (photon.z <= cur_layer.z_bot && photon.z >= cur_layer.z_top) {
+        photon.weight -= (photon.weight * cur_layer.mu_a * cur_layer.l);
+        if (photon.z <= z_min || photon.z >= z_max) {
             double nec_z =0.0;
             bool flag = false;
             bool up = false;
-            if (biotissue.PhotonInTissue(photon)) {
+            if (biotissue.PhotonInTissue(photon, photon_start)) {
                 flag = true;
             }
-            if (photon.z <= cur_layer.z_bot) {
-                nec_z = cur_layer.z_bot;
-            } else if (photon.z >= cur_layer.z_top) {
-                nec_z = cur_layer.z_top;
+            if (photon.z <= z_min) {
+                nec_z = z_min;
+            } else if (photon.z >= z_max) {
+                nec_z = z_max;
                 up = true;
             }
             double back_step = (photon.z - nec_z) / photon.dz;
@@ -73,6 +85,7 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
                         photon.dz = -photon.dz;
                     }
                     else {
+                        z_min = z_max;
                         layer_idx++;
                     }
                 }
@@ -83,6 +96,7 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
                     }
                     else {
                         layer_idx--;
+                        z_min = z_min - biotissue[layer_idx].thickness;
                     }
                 }
             }
@@ -97,6 +111,8 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
             }
         }
         pathway.push_back(Coordinate(photon.x, photon.y, photon.z));
+        std::cout << "Coordinate "<<i<<": " << photon.x << " " << photon.y << " " << photon.z << "\n";
+        i++;
     }
 }
 

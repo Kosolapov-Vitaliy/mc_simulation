@@ -21,7 +21,7 @@ struct Photon {
         weight(n_weight) {}
     Photon(const Photon& p) :x(p.x), y(p.y), z(p.z),
         dx(p.dx), dy(p.dy), dz(p.dz), weight(p.weight) {}
-    bool Alive() { return weight > weight * 0.0001; }
+    bool Alive(double start_weight) { return weight >= start_weight * 0.0001; }
 };
 
 #endif // !PHOTON_H

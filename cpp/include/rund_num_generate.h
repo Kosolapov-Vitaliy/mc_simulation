@@ -8,8 +8,9 @@
 
 class RNGenerate {
 private:
-    std::random_device rd;
+    std::mt19937 gen;
 public:
+    RNGenerate();
     double LengthGenerate(double a_len);
     double FiGenerate();
     double CosTettaGenerate(double g);

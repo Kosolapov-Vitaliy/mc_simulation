@@ -1,8 +1,12 @@
 #include <rund_num_generate.h>
 #include <numbers>
 
+RNGenerate::RNGenerate(){
+    std::random_device rd;
+    gen = std::mt19937(rd());
+}
+
 double RNGenerate::LengthGenerate(double a_len) {
-    std::mt19937 gen(rd());
     std::uniform_real_distribution<> dist(0, 1);
     double ksi = dist(gen);
     double res_len = -std::log(1 - ksi)*a_len;
@@ -10,14 +14,12 @@ double RNGenerate::LengthGenerate(double a_len) {
 }
 
 double RNGenerate::FiGenerate() {
-    std::mt19937 gen(rd());
     std::uniform_real_distribution<> dist(0, 2*std::numbers::pi);
     double fi = dist(gen);
     return fi;
 }
 
 double RNGenerate::CosTettaGenerate(double g) {
-    std::mt19937 gen(rd());
     std::uniform_real_distribution<> dist(0, 1);
     double ksi = dist(gen);
     double cos_tetta = 0;
@@ -35,7 +37,6 @@ double RNGenerate::CosTettaGenerate(double g) {
 }
 
 double RNGenerate::KsiGenerate() {
-    std::mt19937 gen(rd());
     std::uniform_real_distribution<> dist(0, 1);
     double ksi = dist(gen);
     return ksi;

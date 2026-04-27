@@ -9,10 +9,11 @@ class Biotissue {
 private:
     std::vector<Layer> tissue;
 public:
+    Biotissue() = default;
     Biotissue(const Biotissue& bio) { tissue = bio.tissue; }
     const Biotissue& operator=(const Biotissue& bio) { tissue = bio.tissue; }
     void AddLayer(const Layer& layer) { tissue.push_back(layer); }
-    bool PhotonInTissue(const Photon& photon) const;
+    bool PhotonInTissue(const Photon& photon, const double photon_start) const;
     Layer operator[](int i) const { return tissue[i]; }
 };
 
