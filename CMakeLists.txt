@@ -1,35 +1,57 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_NAME mc_simulation)
-project(${PROJECT_NAME})
+project(mc_simulation LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Configs" FORCE)
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release)
-endif()
-
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE})
-
-set(MCS_LIBRARY "${PROJECT_NAME}")
-set(MCS_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/cpp/include")
-
-include_directories("${MCS_INCLUDE}")
-
-# BUILD
+# ================= ENGINE =================
 add_subdirectory(cpp/src)
-add_subdirectory(cpp/samples)
 
-# REPORT
-message(STATUS "")
-message(STATUS "General configuration for ${PROJECT_NAME}")
-message(STATUS "======================================")
-message(STATUS "")
-message(STATUS "   Configuration: ${CMAKE_BUILD_TYPE}")
-message(STATUS "")
+# ================= UI =================
+add_executable(mc_ui gui/main.cpp)
+
+# ================= SYSTEM LIBS =================
+find_package(OpenGL REQUIRED)
+find_package(glfw3 CONFIG REQUIRED)
+
+# ================= IMGUI (FULL MANUAL ONLY) =================
+set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/external/imgui)
+
+set(IMGUI_SRC
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/imgui_demo.cpp
+
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+)
+
+# ================= IMPLOT =================
+file(GLOB IMPLOT_SRC
+    external/implot/*.cpp
+)
+
+target_sources(mc_ui PRIVATE
+    ${IMGUI_SRC}
+    ${IMPLOT_SRC}
+)
+
+target_include_directories(mc_ui PRIVATE
+    cpp/include
+    external/imgui
+    external/imgui/backends
+    external/implot
+)
+
+target_link_libraries(mc_ui PRIVATE
+    mc_simulation
+    glfw
+    OpenGL::GL
+)
+
+set_target_properties(mc_ui PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)

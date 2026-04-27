@@ -10,9 +10,9 @@ struct Photon {
     double dz;
     double weight;
     Photon() :x(0.0), y(0.0), z(0.0), 
-        dx(0.0), dy(0.0), dz(0.0), weight(1.0) {}
+        dx(0.0), dy(0.0), dz(1.0), weight(1.0) {}
     Photon(double n_weight):x(0.0), y(0.0), z(0.0),
-        dx(0.0), dy(0.0), dz(0.0), weight(n_weight) {}
+        dx(0.0), dy(0.0), dz(1.0), weight(n_weight) {}
     Photon(double n_x, double n_y, double n_z,
         double n_dx, double n_dy, double n_dz,
         double n_weight):
