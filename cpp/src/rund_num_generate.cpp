@@ -33,3 +33,10 @@ double RNGenerate::CosTettaGenerate(double g) {
     }
     return cos_tetta;
 }
+
+double RNGenerate::KsiGenerate() {
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dist(0, 1);
+    double ksi = dist(gen);
+    return ksi;
+}

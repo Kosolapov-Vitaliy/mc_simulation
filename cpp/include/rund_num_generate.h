@@ -13,6 +13,7 @@ public:
     double LengthGenerate(double a_len);
     double FiGenerate();
     double CosTettaGenerate(double g);
+    double KsiGenerate();
 };
 
 #endif // !RUND_NUM_GENERATE_H
