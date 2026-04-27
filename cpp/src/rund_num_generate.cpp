@@ -9,7 +9,7 @@ RNGenerate::RNGenerate(){
 double RNGenerate::LengthGenerate(double a_len) {
     std::uniform_real_distribution<> dist(0, 1);
     double ksi = dist(gen);
-    double res_len = -std::log(1 - ksi)*a_len;
+    double res_len = -std::log(1-ksi)*a_len;
     return res_len;
 }
 

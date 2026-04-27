@@ -1,7 +1,11 @@
-set(target ${MCS_LIBRARY})
+set(MCS_LIBRARY mc_simulation)
 
-file(GLOB hdrs "*.h*" "${MCS_INCLUDE}/*.h*")
-file(GLOB srcs "*.cpp")
+file(GLOB SRC
+    "*.cpp"
+)
 
-add_library(${target} STATIC ${srcs} ${hdrs})
-target_link_libraries(${target} ${LIBRARY_DEPS})
+add_library(${MCS_LIBRARY} STATIC ${SRC})
+
+target_include_directories(${MCS_LIBRARY} PUBLIC
+    ${CMAKE_SOURCE_DIR}/cpp/include
+)

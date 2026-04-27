@@ -15,6 +15,7 @@ public:
     void AddLayer(const Layer& layer) { tissue.push_back(layer); }
     bool PhotonInTissue(const Photon& photon, const double photon_start) const;
     Layer operator[](int i) const { return tissue[i]; }
+    int GetLayerCount() const { return (int)tissue.size(); }
 };
 
 #endif // !BIOTISSUE_H
