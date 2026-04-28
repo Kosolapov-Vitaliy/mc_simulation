@@ -1,9 +1,10 @@
-// =============================== main.cpp ===============================
+#define _USE_MATH_DEFINES
 #include <vector>
 #include <iostream>
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <cmath>
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -16,30 +17,24 @@
 #include "coordinate.h"
 #include "rund_num_generate.h"
 
-// ------------------- Глобальные данные для UI -------------------
-std::vector<Layer> userLayers;                       // слои, редактируемые пользователем
-std::vector<std::vector<Coordinate>> trajectories;   // траектории фотонов
+std::vector<Layer> userLayers;
+std::vector<std::vector<Coordinate>> trajectories;   
+std::vector<double> detected;
 int photon_count = 1000;
 bool ready = false;
-bool simulation_running = false;                     // флаг активной симуляции
-std::atomic<float> progress{ 0.0f };                   // прогресс 0..1
-std::mutex traj_mutex;                               // защита доступа к trajectories
+bool simulation_running = false;
+std::atomic<float> progress{ 0.0f };
+std::mutex traj_mutex;
 
-// ------------------- Вспомогательная функция сборки ткани -------------------
 Biotissue buildTissueFromUI() {
     Biotissue t;
     for (auto& layer : userLayers) {
-        // Layer::l должен быть пересчитан (см. правки в layer.h)
-        // Либо вычисляем l на лету, если поле l не используется.
-        // В текущей реализации RunOneIterMCM использует cur_layer.l.
-        // Поэтому мы обновляем l здесь.
         layer.l = 1.0 / (layer.mu_a + layer.mu_s);
         t.AddLayer(layer);
     }
     return t;
 }
 
-// ------------------- Симуляция с прогрессом (запускается в потоке) -------------------
 void runSimulationWithProgress(const Biotissue& tissue, const Photon& init_photon,
     int num_photons, std::vector<std::vector<Coordinate>>& out_trajectories) {
     RNGenerate generator;
@@ -58,12 +53,49 @@ void runSimulationWithProgress(const Biotissue& tissue, const Photon& init_photo
     }
 }
 
-// ------------------- Точка входа -------------------
+void runSimulationDetectedWithProgress(const Biotissue& tissue, const Photon& init_photon,
+    int num_photons, std::vector<std::vector<Coordinate>>& out_trajectories, std::vector<double>& detected) {
+    RNGenerate generator;
+    out_trajectories.clear();
+    out_trajectories.reserve(num_photons);
+    double max_distance = 10;
+    double step = 0.1;
+    std::vector<double> detectors((int)(max_distance / step));
+    for (int i = 0; i < num_photons; i++) {
+        std::vector<Coordinate> cur_path;
+        Photon cur_photon = init_photon;
+        double start_x = cur_photon.x;
+        double start_y = cur_photon.y;
+        double start_z = cur_photon.z;
+        RunOneIterMCM(tissue, cur_photon, generator, cur_path);
+        {
+            std::lock_guard<std::mutex> lock(traj_mutex);
+            out_trajectories.push_back(std::move(cur_path));
+        }
+        double last_x = cur_photon.x;
+        double last_y = cur_photon.y;
+        double last_z = cur_photon.z;
+        if (last_z == start_z) {
+            for (int j = 0; j < (int)(max_distance / step); j++) {
+                double xSqr = ((last_x - start_x) * (last_x - start_x));
+                double ySqr = ((last_y - start_y) * (last_y - start_y));
+                double rMin = 0 + j * step;
+                double rMax = step + j * step;
+                if ((xSqr + ySqr > (rMin * rMin)) && (xSqr + ySqr <= (rMax * rMax))) {
+                    double density=M_PI*(rMax*rMax-rMin*rMin);
+                    detectors.at(j)= detectors.at(j)+1/density;
+                }
+            }
+        }
+        
+        progress = static_cast<float>(i + 1) / num_photons;
+    }
+    detected = detectors;
+}
+
 int main() {
-    // Начальный слой (как в оригинальной buildTissue)
     userLayers.emplace_back(10.0, 0.1, 0.9, 1.4, 3.0);
 
-    // Инициализация GLFW и окна
     if (!glfwInit())
         return -1;
     GLFWwindow* window = glfwCreateWindow(1200, 800, "MC Simulation", nullptr, nullptr);
@@ -74,26 +106,22 @@ int main() {
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
 
-    // ImGui / ImPlot
     ImGui::CreateContext();
     ImPlot::CreateContext();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 130");
 
-    // Главный цикл
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
-        // Начало кадра ImGui
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // ---------- Окно управления ----------
-        // ---------- Окно управления ----------
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
         ImGui::Begin("Control");
+        bool correct = true;
 
         ImGui::InputInt("Photons", &photon_count);
         if (photon_count < 1) photon_count = 1;
@@ -117,6 +145,9 @@ int main() {
             ImGui::InputDouble("g", &lay.g, 0.01, 0.1);
             ImGui::InputDouble("n", &lay.n, 0.02, 0.1);
             ImGui::InputDouble("thickness", &lay.thickness, 0.5, 1.0);
+            if (lay.mu_s == 0 && lay.mu_a == 0) {
+                correct = false;
+            }
             if (ImGui::Button("Remove")) {
                 userLayers.erase(userLayers.begin() + i);
                 ImGui::PopID();
@@ -130,15 +161,17 @@ int main() {
             if (userLayers.empty()) {
                 ImGui::TextColored(ImVec4(1, 0, 0, 1), "Error: no layers!");
             }
+            else if (!correct) {
+                ImGui::TextColored(ImVec4(1, 0, 0, 1), "Error: one of layer is incorrect!");
+            }
             else {
                 Biotissue tissue = buildTissueFromUI();
                 Photon init_photon(0, 0, 0, 0, 0, 1, 1);
                 ready = false;
                 simulation_running = true;
                 progress = 0.0f;
-                // захват photon_count по значению
                 std::thread sim_thread([tissue, init_photon]() {
-                    runSimulationWithProgress(tissue, init_photon, photon_count, trajectories);
+                    runSimulationDetectedWithProgress(tissue, init_photon, photon_count, trajectories, detected);
                     ready = true;
                     simulation_running = false;
                     });
@@ -157,7 +190,6 @@ int main() {
 
         ImGui::End();
 
-        // ---------- Окно траекторий ----------
         ImGui::SetNextWindowPos(ImVec2(420, 10), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(750, 600), ImGuiCond_FirstUseEver);
         ImGui::Begin("Trajectories XY");
@@ -191,7 +223,7 @@ int main() {
         ImGui::End();
 
         // ---------- Окно траекторий XZ ----------
-        ImGui::SetNextWindowPos(ImVec2(420, 620), ImGuiCond_FirstUseEver); // под первым графиком
+        ImGui::SetNextWindowPos(ImVec2(420, 620), ImGuiCond_FirstUseEver); 
         ImGui::SetNextWindowSize(ImVec2(750, 300), ImGuiCond_FirstUseEver);
         ImGui::Begin("Trajectories XZ");
 
@@ -231,7 +263,29 @@ int main() {
 
         ImGui::End();
 
-        // Отрисовка OpenGL
+        ImGui::SetNextWindowPos(ImVec2(420, 620), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(750, 300), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Denisty plot");
+        double max_distance = 10;
+        double step = 0.1;
+        if (ready && ImPlot::BeginPlot("Monte Carlo Denisty plot", ImVec2(-1, -1))) {
+            std::lock_guard<std::mutex> lock(traj_mutex);
+            std::vector<double> x, y;
+            x.reserve(detected.size());
+            y.reserve(detected.size());
+            for (int j = 0; j < (int)(max_distance / step);j++) {
+                x.push_back(j*step);
+                y.push_back(detected[j]);
+                ImPlot::PlotLine("path", x.data(), y.data(), (int)x.size());
+            }
+            ImPlot::EndPlot();
+        }
+        else if (!ready && !simulation_running && trajectories.empty()) {
+            ImGui::Text("Press 'Run simulation' to start.");
+        }
+
+        ImGui::End();
+
         ImGui::Render();
         int w, h;
         glfwGetFramebufferSize(window, &w, &h);
@@ -242,7 +296,6 @@ int main() {
         glfwSwapBuffers(window);
     }
 
-    // Очистка
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImPlot::DestroyContext();

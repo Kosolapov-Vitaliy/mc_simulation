@@ -30,7 +30,8 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
     std::cout << "New PathWay Coordinate 0:"  << photon.x << " " << photon.y << " " << photon.z<<"\n";
     double start_weight = photon.weight;
     int i = 1;
-    while (photon.Alive(start_weight)) {
+    bool in_tissue = true;
+    while (photon.Alive(start_weight)&&in_tissue) {
         Layer cur_layer = biotissue[layer_idx];
         double step = generator.LengthGenerate(cur_layer.l);
         double fi = generator.FiGenerate();
@@ -121,7 +122,7 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
                     photon.z = photon.z + new_step * photon.dz;
                 }
                 else {
-                    photon.weight = 0;
+                    in_tissue = false;
                     border = false;
                 }
                 if (!(photon.z <= z_min || photon.z >= z_max)) {
@@ -146,3 +147,4 @@ void RunSimulation(const Biotissue& biotissue, const Photon& photon, int num_pho
         trajectorys.push_back(cur_pathway);
     }
 }
+
