@@ -5,6 +5,10 @@
 #include <thread>
 #include <mutex>
 #include <cmath>
+#include <future>
+#include <utility>
+#include <iterator>
+
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -55,42 +59,67 @@ void runSimulationWithProgress(const Biotissue& tissue, const Photon& init_photo
 
 void runSimulationDetectedWithProgress(const Biotissue& tissue, const Photon& init_photon,
     int num_photons, std::vector<std::vector<Coordinate>>& out_trajectories, std::vector<double>& detected) {
-    RNGenerate generator;
-    out_trajectories.clear();
-    out_trajectories.reserve(num_photons);
-    double max_distance = 10;
-    double step = 0.1;
-    std::vector<double> detectors((int)(max_distance / step));
-    for (int i = 0; i < num_photons; i++) {
-        std::vector<Coordinate> cur_path;
-        Photon cur_photon = init_photon;
-        double start_x = cur_photon.x;
-        double start_y = cur_photon.y;
-        double start_z = cur_photon.z;
-        RunOneIterMCM(tissue, cur_photon, generator, cur_path);
-        {
-            std::lock_guard<std::mutex> lock(traj_mutex);
-            out_trajectories.push_back(std::move(cur_path));
-        }
-        double last_x = cur_photon.x;
-        double last_y = cur_photon.y;
-        double last_z = cur_photon.z;
-        if (last_z == start_z) {
-            for (int j = 0; j < (int)(max_distance / step); j++) {
-                double xSqr = ((last_x - start_x) * (last_x - start_x));
-                double ySqr = ((last_y - start_y) * (last_y - start_y));
-                double rMin = 0 + j * step;
-                double rMax = step + j * step;
-                if ((xSqr + ySqr > (rMin * rMin)) && (xSqr + ySqr <= (rMax * rMax))) {
-                    double density=M_PI*(rMax*rMax-rMin*rMin);
-                    detectors.at(j)= detectors.at(j)+1/density;
+    const double max_distance = 10;
+    const double step = 0.1;
+    const int detector_count = static_cast<int>(max_distance / step);
+    unsigned int threads = std::thread::hardware_concurrency();
+    std::vector<std::future<std::pair<std::vector<std::vector<Coordinate>>, std::vector<double>>>> futures;
+
+    int photons_per_thread = num_photons / threads;
+    int remainder = num_photons % threads;
+    int start = 0;
+    std::atomic<int> processed{ 0 };
+
+    for (int t = 0; t < threads; t++) {
+        int photons_count = photons_per_thread + (t < remainder ? 1 : 0);
+        futures.push_back(std::async(std::launch::async, [&, start, photons_count]() {
+            RNGenerate local_gen;
+            std::vector<std::vector<Coordinate>> local_traj;
+            local_traj.reserve(photons_count);
+            std::vector<double> local_detected(detector_count, 0.0);
+            for (int i = 0; i < photons_count; i++) {
+                std::vector<Coordinate> path;
+                Photon photon = init_photon;
+                double start_x = photon.x;
+                double start_y = photon.y;
+                double start_z = photon.z;
+                RunOneIterMCM(tissue, photon, local_gen, path);
+                local_traj.push_back(std::move(path));
+                double last_x = photon.x;
+                double last_y = photon.y;
+                double last_z = photon.z;
+                if (last_z == start_z) {
+                    double dx = last_x - start_x, dy = last_y - start_y;
+                    double r2 = dx * dx + dy * dy;
+                    for (int j = 0; j < detector_count+1; j++) {
+                        double rMin = j * step;
+                        double rMax = (j + 1) * step;
+                        if (r2 > rMin * rMin && r2 <= rMax * rMax) {
+                            double area = M_PI * (rMax * rMax - rMin * rMin);
+                            local_detected[j] += 1.0 / area;
+                            break;
+                        }
+                    }
                 }
+                processed.fetch_add(1);
+                progress = static_cast<float>(processed.load()) / num_photons;
             }
-        }
-        
-        progress = static_cast<float>(i + 1) / num_photons;
+            
+            return std::make_pair(std::move(local_traj), std::move(local_detected));
+            }));
+        start += photons_count;
     }
-    detected = detectors;
+    out_trajectories.clear();
+    detected.assign(detector_count, 0.0);
+    for (auto& f : futures) {
+        auto [traj, det] = f.get();
+        out_trajectories.insert(out_trajectories.end(),
+            std::make_move_iterator(traj.begin()),
+            std::make_move_iterator(traj.end()));
+        for (int j = 0; j < det.size(); j++) {
+            detected[j] += det[j];
+        }
+    }
 }
 
 int main() {
@@ -222,7 +251,6 @@ int main() {
 
         ImGui::End();
 
-        // ---------- Окно траекторий XZ ----------
         ImGui::SetNextWindowPos(ImVec2(420, 620), ImGuiCond_FirstUseEver); 
         ImGui::SetNextWindowSize(ImVec2(750, 300), ImGuiCond_FirstUseEver);
         ImGui::Begin("Trajectories XZ");
@@ -276,6 +304,27 @@ int main() {
             for (int j = 0; j < (int)(max_distance / step);j++) {
                 x.push_back(j*step);
                 y.push_back(detected[j]);
+                ImPlot::PlotLine("path", x.data(), y.data(), (int)x.size());
+            }
+            ImPlot::EndPlot();
+        }
+        else if (!ready && !simulation_running && trajectories.empty()) {
+            ImGui::Text("Press 'Run simulation' to start.");
+        }
+
+        ImGui::End();
+
+        ImGui::SetNextWindowPos(ImVec2(420, 620), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(750, 300), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Denisty plot (logariphm)");
+        if (ready && ImPlot::BeginPlot("Monte Carlo Denisty plot (logariphm)", ImVec2(-1, -1))) {
+            std::lock_guard<std::mutex> lock(traj_mutex);
+            std::vector<double> x, y;
+            x.reserve(detected.size());
+            y.reserve(detected.size());
+            for (int j = 0; j < (int)(max_distance / step); j++) {
+                x.push_back(j * step);
+                y.push_back(std::log10(detected[j]));
                 ImPlot::PlotLine("path", x.data(), y.data(), (int)x.size());
             }
             ImPlot::EndPlot();

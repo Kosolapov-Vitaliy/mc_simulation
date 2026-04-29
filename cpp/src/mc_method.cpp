@@ -27,7 +27,6 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
     double z_min = photon.z;
     double photon_start = photon.z;
     pathway.push_back(Coordinate(photon.x, photon.y, photon.z));
-    std::cout << "New PathWay Coordinate 0:"  << photon.x << " " << photon.y << " " << photon.z<<"\n";
     double start_weight = photon.weight;
     int i = 1;
     bool in_tissue = true;
@@ -132,7 +131,6 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
             }            
         }
         pathway.push_back(Coordinate(photon.x, photon.y, photon.z));
-        std::cout << "Coordinate "<<i<<": " << photon.x << " " << photon.y << " " << photon.z << "\n";
         i++;
     }
 }
