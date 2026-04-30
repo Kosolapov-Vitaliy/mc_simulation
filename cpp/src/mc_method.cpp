@@ -21,8 +21,26 @@ double CalcFRCoef(double dz, double n_i, double n_t) {
     }
 }
 
+void Refract(double& dx, double& dy, double& dz, double n_i, double n_t) {
+    double cos_alpha_i = std::fabs(dz);
+    double sin_alpha_i = std::sqrt(1.0 - cos_alpha_i * cos_alpha_i);
+    double sin_alpha_t = (n_i / n_t) * sin_alpha_i;
+    double cos_alpha_t = std::sqrt(1.0 - sin_alpha_t * sin_alpha_t);
+    double sign_dz = dz/std::fabs(dz);
+    double scale = sin_alpha_t / sin_alpha_i;
+    dx *= scale;
+    dy *= scale;
+    dz = sign_dz * cos_alpha_t;
+    double norm = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (norm > 1e-12) {
+        dx /= norm;
+        dy /= norm;
+        dz /= norm;
+    }
+}
+
 void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& generator,
-    std::vector<Coordinate>& pathway) {
+    std::vector<Coordinate>& pathway, double n_external, double n_depth) {
     int layer_idx = 0;
     double z_min = photon.z;
     double photon_start = photon.z;
@@ -54,10 +72,10 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
         } 
         double norm = std::sqrt((new_dx * new_dx) + new_dy * new_dy + new_dz * new_dz);
         new_dx /= norm; new_dy /= norm; new_dz /= norm;
+        photon.dx = new_dx; photon.dy = new_dy; photon.dz = new_dz;
         photon.x = photon.x + step * photon.dx;
         photon.y = photon.y + step * photon.dy;
         photon.z = photon.z + step * photon.dz;
-        photon.dx = new_dx; photon.dy = new_dy; photon.dz = new_dz;
         photon.weight -= (photon.weight * cur_layer.mu_a * cur_layer.l);
         if (photon.z <= z_min || photon.z >= z_max) {
             bool border = true;
@@ -66,15 +84,14 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
                 double frcoef =0.0;
                 bool flag = (photon.z <= z_min);
                 bool out = false;
-                cur_layer = biotissue[layer_idx];
-                z_max = cur_layer.thickness + z_min;
+                cur_layer = biotissue[layer_idx];                
                 if (flag) {
                     nec_z = z_min;
                     if ((layer_idx > 0)){
                         frcoef = CalcFRCoef(photon.dz, cur_layer.n, biotissue[layer_idx - 1].n);
                     }
                     else {
-                        frcoef = CalcFRCoef(photon.dz, cur_layer.n, 1.0); //Граница со слоем откуда идут фотоны, будем считать, что воздух
+                        frcoef = CalcFRCoef(photon.dz, cur_layer.n, n_external); //Граница со слоем откуда идут фотоны, будем считать, что воздух
                         out = true;
                     }
                 }
@@ -84,7 +101,7 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
                         frcoef = CalcFRCoef(photon.dz, cur_layer.n, biotissue[layer_idx + 1].n);
                     }
                     else {
-                        frcoef = CalcFRCoef(photon.dz, cur_layer.n, 1.0); //Граница со слоем который идёт дальше вглубь, будем считать, что тоже воздух
+                        frcoef = CalcFRCoef(photon.dz, cur_layer.n, n_depth); //Граница со слоем который идёт дальше вглубь, будем считать, что тоже воздух
                         out = true;
                     }
                 }
@@ -93,37 +110,45 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
                 photon.x = photon.x - (photon.dx * back_step);
                 photon.y = photon.y - (photon.dy * back_step);
                 double norm = std::sqrt((photon.dx * photon.dx) + (photon.dy * photon.dy) + (photon.dz * photon.dz));
-                double ksi = generator.KsiGenerate();                
+                photon.dz = photon.dz / norm;
+                photon.dx = photon.dx / norm;
+                photon.dy = photon.dy / norm;
+                double ksi = generator.KsiGenerate();
                 if (ksi <= frcoef) {
-                    photon.dz = -photon.dz / norm;
-                    photon.dx = photon.dx / norm;
-                    photon.dy = photon.dy / norm;
+                    photon.dz = -photon.dz;
+                    photon.dx = photon.dx;
+                    photon.dy = photon.dy;
                     photon.x = photon.x + back_step * photon.dx;
                     photon.y = photon.y + back_step * photon.dy;
                     photon.z = photon.z + back_step * photon.dz;
                 }
                 else if (flag&&(!(out))){
                     double prev_l = cur_layer.l;
+                    double prev_n = cur_layer.n;
                     layer_idx--;
                     z_min = z_min - biotissue[layer_idx].thickness;
                     double new_step = (back_step * biotissue[layer_idx].l) / prev_l;
+                    Refract(photon.dx, photon.dy, photon.dz, prev_n, biotissue[layer_idx].n);
                     photon.x = photon.x + new_step * photon.dx;
                     photon.y = photon.y + new_step * photon.dy;
                     photon.z = photon.z + new_step * photon.dz;
                 }
                 else if ((!flag) && (!(out))) {
                     double prev_l = cur_layer.l;
+                    double prev_n = cur_layer.n;
                     z_min = z_max;
                     layer_idx++;
                     double new_step = (back_step * biotissue[layer_idx].l) / prev_l;
-                    photon.x = photon.x + new_step * photon.dx;
-                    photon.y = photon.y + new_step * photon.dy;
-                    photon.z = photon.z + new_step * photon.dz;
+                    Refract(photon.dx, photon.dy, photon.dz, prev_n, biotissue[layer_idx].n);
+                    photon.x = photon.x + back_step * photon.dx;
+                    photon.y = photon.y + back_step * photon.dy;
+                    photon.z = photon.z + back_step * photon.dz;
                 }
                 else {
                     in_tissue = false;
                     border = false;
                 }
+                z_max = cur_layer.thickness + z_min;
                 if (!(photon.z <= z_min || photon.z >= z_max)) {
                     border = false;
                 }
@@ -136,12 +161,12 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
 }
 
 void RunSimulation(const Biotissue& biotissue, const Photon& photon, int num_photons,
-    std::vector<std::vector<Coordinate>>& trajectorys) {
+    std::vector<std::vector<Coordinate>>& trajectorys, double n_external, double n_depth) {
     RNGenerate generator = RNGenerate();
     for (int i = 0; i < num_photons; i++) {
         std::vector<Coordinate> cur_pathway;
         Photon cur_photon = photon;
-        RunOneIterMCM(biotissue, cur_photon, generator, cur_pathway);
+        RunOneIterMCM(biotissue, cur_photon, generator, cur_pathway, n_external, n_depth);
         trajectorys.push_back(cur_pathway);
     }
 }

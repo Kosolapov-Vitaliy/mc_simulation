@@ -25,7 +25,7 @@ inline double CalcDZ(double sin_tt, double cos_tt, double cos_fi, double dz) {
 }
 double CalcFRCoef(double dz, double n_i, double n_t);
 void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& generator,
-    std::vector<Coordinate>& pathway);
+    std::vector<Coordinate>& pathway, double n_external, double n_depth);
 void RunSimulation(const Biotissue& biotissue,const Photon& photon, int num_photons,
-    std::vector<std::vector<Coordinate>>& trajectorys);
+    std::vector<std::vector<Coordinate>>& trajectorys, double n_external, double n_depth);
 #endif // !MC_METHOD_H
