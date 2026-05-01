@@ -148,6 +148,7 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
                     in_tissue = false;
                     border = false;
                 }
+                cur_layer = biotissue[layer_idx];
                 z_max = cur_layer.thickness + z_min;
                 if (!(photon.z <= z_min || photon.z >= z_max)) {
                     border = false;
