@@ -214,8 +214,12 @@ int main() {
 
         if (ready && ImPlot::BeginPlot("Monte Carlo paths (XY)", ImVec2(-1, -1))) {
             std::lock_guard<std::mutex> lock(traj_mutex);
+            ImPlot::SetupAxis(ImAxis_Y1, "axis Y (mm)");
+            ImPlot::SetupAxis(ImAxis_X1, "axis X (mm)");
             std::vector<double> end_x, end_y;
+            int i = 0;
             for (const auto& path : trajectories) {
+                if (i > 1000) break;
                 if (path.empty()) continue;
                 std::vector<double> x, y;
                 x.reserve(path.size());
@@ -236,7 +240,7 @@ int main() {
         }
         else if (!ready && !simulation_running && trajectories.empty()) {
             ImGui::Text("Press 'Run simulation' to start.");
-        }
+        } 
 
         ImGui::End();
 
@@ -246,8 +250,12 @@ int main() {
 
         if (ready && ImPlot::BeginPlot("Monte Carlo paths (XZ)", ImVec2(-1, -1))) {
             std::lock_guard<std::mutex> lock(traj_mutex);
+            ImPlot::SetupAxis(ImAxis_Y1, "axis Z (mm)");
+            ImPlot::SetupAxis(ImAxis_X1, "axis X (mm)");
             std::vector<double> end_x, end_z;
+            int i = 0;
             for (const auto& path : trajectories) {
+                if (i > 1000) break;
                 if (path.empty()) continue;
                 std::vector<double> x, z;
                 x.reserve(path.size());
@@ -260,6 +268,7 @@ int main() {
                 const auto& last = path.back();
                 end_x.push_back(last.x);
                 end_z.push_back(last.z);
+                i++;
             }
             if (!end_x.empty()) {
                 ImPlot::PlotScatter("end points", end_x.data(), end_z.data(), (int)end_x.size());
