@@ -8,6 +8,7 @@
 #include <future>
 #include <utility>
 #include <iterator>
+#include <string>
 
 
 #include "imgui.h"
@@ -31,6 +32,10 @@ std::atomic<float> progress{ 0.0f };
 std::mutex traj_mutex;
 double n_external;
 double n_depth;
+bool saveDR = false;
+std::vector<std::vector<double>> savedDenisty;
+int defer = 0;
+
 
 Biotissue buildTissueFromUI() {
     Biotissue t;
@@ -125,6 +130,11 @@ int main() {
     ImPlot::CreateContext();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 130");
+    ImFont* pMyBigFont = ImGui::GetIO().Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\Arial.ttf", 24.0f);
+    if (!pMyBigFont) {
+        printf("Не удалось загрузить шрифт!\n");
+        pMyBigFont = ImGui::GetIO().Fonts->AddFontDefault();
+    }
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -132,7 +142,9 @@ int main() {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-
+        ImPlot::PushStyleColor(ImPlotCol_PlotBg, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        ImPlot::PushStyleColor(ImPlotCol_AxisGrid, ImVec4(0.5f, 0.0f, 0.0f, 0.5f));
+        ImPlot::PushStyleColor(ImPlotCol_AxisTick, ImVec4(0.5f, 0.0f, 0.0f, 0.5f));
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
         ImGui::Begin("Control");
@@ -142,6 +154,10 @@ int main() {
         if (photon_count < 1) photon_count = 1;
 
         ImGui::SeparatorText("Tissue Layers");
+        ImGui::Checkbox("Save denisty result", &saveDR);
+        if (ImGui::Button("Clear saved denisty result")) {
+            savedDenisty.clear();
+        }
 
         if (ImGui::Button("+ Add Layer")) {
             userLayers.emplace_back(10.0, 0.1, 0.9, 1.4, 3.0);
@@ -188,6 +204,7 @@ int main() {
                 ready = false;
                 simulation_running = true;
                 progress = 0.0f;
+                defer = 1;
                 std::thread sim_thread([tissue, init_photon]() {
                     runSimulationDetectedWithProgress(tissue, init_photon, photon_count, trajectories, detected, n_external, n_depth);
                     ready = true;
@@ -294,6 +311,7 @@ int main() {
         ImGui::Begin("Denisty plot");
         double max_distance = 10;
         double step = 0.1;
+        ImGui::PushFont(pMyBigFont);
         if (ready && ImPlot::BeginPlot("Monte Carlo Denisty plot", ImVec2(-1, -1))) {
             std::lock_guard<std::mutex> lock(traj_mutex);
             ImPlot::SetupAxis(ImAxis_Y1, "density");
@@ -304,14 +322,25 @@ int main() {
             for (int j = 0; j < (int)(max_distance / step);j++) {
                 x.push_back(j*step);
                 y.push_back(detected[j]);
-                ImPlot::PlotLine("path", x.data(), y.data(), (int)x.size());
+                
             }
+            if (!savedDenisty.empty()) {
+                for (int k = 0; k < (int)savedDenisty.size(); k++) {
+                    std::string namePath = std::to_string(k + 1) + "path";
+                    ImPlot::PlotLine(namePath.c_str(), x.data(), savedDenisty[k].data(), (int)x.size());
+                }
+            }
+            if (saveDR&&(defer>0)) {
+                savedDenisty.push_back(y);
+                defer--;
+            }
+            ImPlot::PlotLine("newpath", x.data(), y.data(), (int)x.size());
             ImPlot::EndPlot();
         }
         else if (!ready && !simulation_running && trajectories.empty()) {
             ImGui::Text("Press 'Run simulation' to start.");
         }
-
+        ImGui::PopFont();
         ImGui::End();
 
         ImGui::SetNextWindowPos(ImVec2(420, 620), ImGuiCond_FirstUseEver);
@@ -330,8 +359,19 @@ int main() {
             for (int j = 0; j < (int)(max_distance / step); j++) {
                 x.push_back(j * step);
                 y.push_back(detected[j]);
-                ImPlot::PlotLine("path", x.data(), y.data(), (int)x.size());
+
             }
+            if (!savedDenisty.empty()) {
+                for (int k = 0; k < (int)savedDenisty.size(); k++) {
+                    std::string namePath = std::to_string(k + 1) + "path";
+                    ImPlot::PlotLine(namePath.c_str(), x.data(), savedDenisty[k].data(), (int)x.size());
+                }
+            }
+            if (saveDR && (defer > 0)) {
+                savedDenisty.push_back(y);
+                defer--;
+            }
+            ImPlot::PlotLine("newpath", x.data(), y.data(), (int)x.size());
             ImPlot::EndPlot();
         }
         else if (!ready && !simulation_running && trajectories.empty()) {
