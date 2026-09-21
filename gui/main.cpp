@@ -23,7 +23,8 @@
 #include "rund_num_generate.h"
 
 std::vector<Layer> userLayers;
-std::vector<std::vector<Coordinate>> trajectories;   
+std::vector<std::vector<Coordinate>> trajectories;
+std::vector<double> max_deep_photons;
 std::vector<double> detected;
 int photon_count = 1000;
 bool ready = false;
@@ -48,13 +49,13 @@ Biotissue buildTissueFromUI() {
 
 
 void runSimulationDetectedWithProgress(const Biotissue& tissue, const Photon& init_photon,
-    int num_photons, std::vector<std::vector<Coordinate>>& out_trajectories, std::vector<double>& detected,
+    int num_photons, std::vector<std::vector<Coordinate>>& out_trajectories, std::vector<double>& photons_max_deep, std::vector<double>& detected,
     double n_external, double n_depth) {
     const double max_distance = 10;
     const double step = 0.1;
     const int detector_count = static_cast<int>(max_distance / step);
     unsigned int threads = std::thread::hardware_concurrency();
-    std::vector<std::future<std::pair<std::vector<std::vector<Coordinate>>, std::vector<double>>>> futures;
+    std::vector<std::future<std::tuple<std::vector<std::vector<Coordinate>>, std::vector<double>, std::vector<double>>>> futures;
 
     int photons_per_thread = num_photons / threads;
     int remainder = num_photons % threads;
@@ -67,15 +68,19 @@ void runSimulationDetectedWithProgress(const Biotissue& tissue, const Photon& in
             RNGenerate local_gen;
             std::vector<std::vector<Coordinate>> local_traj;
             local_traj.reserve(photons_count);
+            std::vector<double> local_max_deep;
+            local_max_deep.reserve(photons_count);
             std::vector<double> local_detected(detector_count, 0.0);
             for (int i = 0; i < photons_count; i++) {
                 std::vector<Coordinate> path;
+                double photon_max_deep;
                 Photon photon = init_photon;
                 double start_x = photon.x;
                 double start_y = photon.y;
                 double start_z = photon.z;
-                RunOneIterMCM(tissue, photon, local_gen, path, n_external, n_depth);
+                RunOneIterMCM(tissue, photon, local_gen, path, photon_max_deep, n_external, n_depth);
                 local_traj.push_back(std::move(path));
+                local_max_deep.push_back(std::move(photon_max_deep));
                 double last_x = photon.x;
                 double last_y = photon.y;
                 double last_z = photon.z;
@@ -96,21 +101,42 @@ void runSimulationDetectedWithProgress(const Biotissue& tissue, const Photon& in
                 progress = static_cast<float>(processed.load()) / num_photons;
             }
             
-            return std::make_pair(std::move(local_traj), std::move(local_detected));
+            return std::make_tuple(std::move(local_traj), std::move(local_detected), std::move(local_max_deep));
             }));
         start += photons_count;
     }
     out_trajectories.clear();
     detected.assign(detector_count, 0.0);
+    photons_max_deep.assign(photon_count, 0.0);
     for (auto& f : futures) {
-        auto [traj, det] = f.get();
+        auto [traj, det, max_d] = f.get();
         out_trajectories.insert(out_trajectories.end(),
             std::make_move_iterator(traj.begin()),
             std::make_move_iterator(traj.end()));
         for (int j = 0; j < det.size(); j++) {
             detected[j] += det[j];
         }
+        for (int j = 0; j < max_d.size(); j++) {
+            photons_max_deep[j] = max_d[j];
+        }
     }
+}
+
+void DrawGridPanel(int cols, int rows, float cellW, float cellH)
+{
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+
+    for (int y = 0; y < rows; ++y)
+        for (int x = 0; x < cols; ++x)
+        {
+            ImU32 col = IM_COL32(50 + x * 40, 50 + y * 40, 150, 255);
+            ImVec2 a(origin.x + x * cellW, origin.y + y * cellH);
+            ImVec2 b(a.x + cellW - 2, a.y + cellH - 2);
+            dl->AddRectFilled(a, b, col);
+        }
+
+    ImGui::Dummy(ImVec2(cols * cellW, rows * cellH));
 }
 
 int main() {
@@ -206,7 +232,7 @@ int main() {
                 progress = 0.0f;
                 defer = 1;
                 std::thread sim_thread([tissue, init_photon]() {
-                    runSimulationDetectedWithProgress(tissue, init_photon, photon_count, trajectories, detected, n_external, n_depth);
+                    runSimulationDetectedWithProgress(tissue, init_photon, photon_count, trajectories, max_deep_photons, detected, n_external, n_depth);
                     ready = true;
                     simulation_running = false;
                     });
@@ -227,6 +253,12 @@ int main() {
 
         ImGui::SetNextWindowPos(ImVec2(420, 10), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(750, 600), ImGuiCond_FirstUseEver);
+
+        ImGui::Begin("TestPan");
+        if (ready) {
+            ImGui::Text("MaxDeep: %f", max_deep_photons[0]);
+        }
+        ImGui::End();
         ImGui::Begin("Trajectories XY");
 
         if (ready && ImPlot::BeginPlot("Monte Carlo paths (XY)", ImVec2(-1, -1))) {

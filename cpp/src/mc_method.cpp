@@ -40,11 +40,12 @@ void Refract(double& dx, double& dy, double& dz, double n_i, double n_t) {
 }
 
 void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& generator,
-    std::vector<Coordinate>& pathway, double n_external, double n_depth) {
+    std::vector<Coordinate>& pathway, double& photon_max_deep, double n_external, double n_depth) {
     int layer_idx = 0;
     double z_min = photon.z;
     double photon_start = photon.z;
     pathway.push_back(Coordinate(photon.x, photon.y, photon.z));
+    photon_max_deep = photon.z;
     double start_weight = photon.weight;
     int i = 1;
     bool in_tissue = true;
@@ -91,7 +92,7 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
                         frcoef = CalcFRCoef(photon.dz, cur_layer.n, biotissue[layer_idx - 1].n);
                     }
                     else {
-                        frcoef = CalcFRCoef(photon.dz, cur_layer.n, n_external); //Граница со слоем откуда идут фотоны, будем считать, что воздух
+                        frcoef = CalcFRCoef(photon.dz, cur_layer.n, n_external);
                         out = true;
                     }
                 }
@@ -101,7 +102,7 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
                         frcoef = CalcFRCoef(photon.dz, cur_layer.n, biotissue[layer_idx + 1].n);
                     }
                     else {
-                        frcoef = CalcFRCoef(photon.dz, cur_layer.n, n_depth); //Граница со слоем который идёт дальше вглубь, будем считать, что тоже воздух
+                        frcoef = CalcFRCoef(photon.dz, cur_layer.n, n_depth);
                         out = true;
                     }
                 }
@@ -157,18 +158,22 @@ void RunOneIterMCM(const Biotissue& biotissue, Photon& photon, RNGenerate& gener
             }            
         }
         pathway.push_back(Coordinate(photon.x, photon.y, photon.z));
+        photon_max_deep = std::max(photon_max_deep, photon.z);
         i++;
     }
+
 }
 
 void RunSimulation(const Biotissue& biotissue, const Photon& photon, int num_photons,
-    std::vector<std::vector<Coordinate>>& trajectorys, double n_external, double n_depth) {
+    std::vector<std::vector<Coordinate>>& trajectorys, std::vector<double>& max_deep_photons, double n_external, double n_depth) {
     RNGenerate generator = RNGenerate();
     for (int i = 0; i < num_photons; i++) {
         std::vector<Coordinate> cur_pathway;
         Photon cur_photon = photon;
-        RunOneIterMCM(biotissue, cur_photon, generator, cur_pathway, n_external, n_depth);
+        double max_deep_cur_photon = photon.z;
+        RunOneIterMCM(biotissue, cur_photon, generator, cur_pathway, max_deep_cur_photon, n_external, n_depth);
         trajectorys.push_back(cur_pathway);
+        max_deep_photons.push_back(max_deep_cur_photon);
     }
 }
 
