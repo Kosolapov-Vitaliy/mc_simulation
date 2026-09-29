@@ -44,6 +44,7 @@
     int size_deptdist_hm = 1000;
 
     static std::vector<std::vector<int>> table;
+    std::vector<std::vector<Coordinate>> trajectories_of_detected;
 
 
     Biotissue buildTissueFromUI(double& max_deep) {
@@ -59,13 +60,14 @@
 
 
     void runSimulationDetectedWithProgress(const Biotissue& tissue, const Photon& init_photon,
-        int num_photons, std::vector<std::vector<Coordinate>>& out_trajectories, std::vector<std::pair<double, double>>& photons_max_deep, std::vector<double>& detected,
-        double n_external, double n_depth) {
+        int num_photons, std::vector<std::vector<Coordinate>>& out_trajectories,
+        std::vector<std::vector<Coordinate>>& detected_out_trajectories, std::vector<std::pair<double, double>>& photons_max_deep,
+        std::vector<double>& detected, double n_external, double n_depth) {
         const double max_distance = 10;
         const double step = 0.1;
         const int detector_count = static_cast<int>(max_distance / step);
         unsigned int threads = std::thread::hardware_concurrency();
-        std::vector<std::future<std::tuple<std::vector<std::vector<Coordinate>>, std::vector<double>, std::vector<std::pair<double, double>>>>> futures;
+        std::vector<std::future<std::tuple<std::vector<std::vector<Coordinate>>, std::vector<std::vector<Coordinate>>, std::vector<double>, std::vector<std::pair<double, double>>>>> futures;
 
         int photons_per_thread = num_photons / threads;
         int remainder = num_photons % threads;
@@ -77,7 +79,9 @@
             futures.push_back(std::async(std::launch::async, [&, start, photons_count]() {
                 RNGenerate local_gen;
                 std::vector<std::vector<Coordinate>> local_traj;
+                std::vector<std::vector<Coordinate>> local_detected_traj;
                 local_traj.reserve(photons_count);
+                local_detected_traj.reserve(photons_count);
                 std::vector<std::pair<double, double>> local_max_deep;
                 local_max_deep.reserve(photons_count);
                 std::vector<double> local_detected(detector_count, 0.0);
@@ -88,8 +92,7 @@
                     double start_x = photon.x;
                     double start_y = photon.y;
                     double start_z = photon.z;
-                    RunOneIterMCM(tissue, photon, local_gen, path, photon_max_deep, n_external, n_depth);
-                    local_traj.push_back(std::move(path));                
+                    RunOneIterMCM(tissue, photon, local_gen, path, photon_max_deep, n_external, n_depth);               
                     double last_x = photon.x;
                     double last_y = photon.y;
                     double last_z = photon.z;
@@ -102,27 +105,33 @@
                             double rMax = (j + 1) * step;
                             if (r2 > rMin * rMin && r2 <= rMax * rMax) {
                                 double area = M_PI * (rMax * rMax - rMin * rMin);
-                                local_detected[j] += 1.0 / area;                            
+                                local_detected[j] += 1.0 / area;
+                                local_detected_traj.push_back(path);
                                 break;
                             }
                         }
                     }
+                    local_traj.push_back(std::move(path));
                     processed.fetch_add(1);
                     progress = static_cast<float>(processed.load()) / num_photons;
                 }
             
-                return std::make_tuple(std::move(local_traj), std::move(local_detected), std::move(local_max_deep));
+                return std::make_tuple(std::move(local_traj),std::move(local_detected_traj), std::move(local_detected), std::move(local_max_deep));
                 }));
             start += photons_count;
         }
         out_trajectories.clear();
+        detected_out_trajectories.clear();
         photons_max_deep.clear();
         detected.assign(detector_count, 0.0);
         for (auto& f : futures) {
-            auto [traj, det, max_d] = f.get();
+            auto [traj,det_traj, det, max_d] = f.get();
             out_trajectories.insert(out_trajectories.end(),
                 std::make_move_iterator(traj.begin()),
                 std::make_move_iterator(traj.end()));
+            detected_out_trajectories.insert(detected_out_trajectories.end(),
+                std::make_move_iterator(det_traj.begin()),
+                std::make_move_iterator(det_traj.end()));
             for (int j = 0; j < det.size(); j++) {
                 detected[j] += det[j];
             }
@@ -134,7 +143,7 @@
 
     int main() {
         userLayers.emplace_back(10.0, 0.1, 0.9, 1.4, 3.0);
-        table.assign(100, std::vector<int>(100, 0));
+        table.assign(size_deptdist_hm, std::vector<int>(size_deptdist_hm, 0));
 
         if (!glfwInit())
             return -1;
@@ -241,7 +250,7 @@
                         progress = 0.0f;
                         defer = 1;
                         std::thread sim_thread([tissue, init_photon]() {
-                            runSimulationDetectedWithProgress(tissue, init_photon, photon_count, trajectories, max_deep_photons, detected, n_external, n_depth);
+                            runSimulationDetectedWithProgress(tissue, init_photon, photon_count, trajectories, trajectories_of_detected, max_deep_photons, detected, n_external, n_depth);
                             ready = true;
                             simulation_running = false;
                             table_need_recalculation = true;
@@ -357,7 +366,109 @@
                         const auto& last = path.back();
                         end_y.push_back(last.y);
                         end_z.push_back(last.z);
-                        i++;
+                    }
+                    if (!end_y.empty()) {
+                        ImPlot::PlotScatter("end points", end_y.data(), end_z.data(), (int)end_y.size());
+                    }
+                    double prevThickness = 0;
+                    ImPlotSpec spec;
+                    spec.LineColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+                    spec.Flags = ImPlotInfLinesFlags_Horizontal;
+                    for (const auto& layer : userLayers) {
+                        prevThickness += layer.thickness;
+                        ImPlot::PlotInfLines("layer_border", &prevThickness, 1, spec);
+                    }
+                    ImPlot::EndPlot();
+                }
+                else if (!ready && !simulation_running && trajectories.empty()) {
+                    ImGui::Text("Press 'Run simulation' to start.");
+                }
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Trajectories of photons that exit back into the environment"))
+            {
+                enum class Surface { XY, XZ, YZ };
+                static Surface sur = Surface::XZ;
+                if (ImGui::Selectable("XY", sur == Surface::XY))  sur = Surface::XY;
+                if (ImGui::Selectable("XZ", sur == Surface::XZ)) sur = Surface::XZ;
+                if (ImGui::Selectable("YZ", sur == Surface::YZ))  sur = Surface::YZ;
+                if (ready && (sur == Surface::XZ) && ImPlot::BeginPlot("Monte Carlo paths (XZ)", ImVec2(-1, -1))) {
+                    std::lock_guard<std::mutex> lock(traj_mutex);
+                    ImPlot::SetupAxis(ImAxis_Y1, "axis Z (mm)");
+                    ImPlot::SetupAxis(ImAxis_X1, "axis X (mm)");
+                    std::vector<double> end_x, end_z;
+                    for (int i = 0; i < std::min((int)trajectories_of_detected.size(), 1000); i++) {
+                        const auto& path = trajectories_of_detected[i];
+                        if (path.empty()) continue;
+                        std::vector<double> x, z;
+                        x.reserve(path.size());
+                        z.reserve(path.size());
+                        for (const auto& p : path) {
+                            x.push_back(p.x);
+                            z.push_back(p.z);
+                        }
+                        ImPlot::PlotLine("path", x.data(), z.data(), (int)x.size());
+                        const auto& last = path.back();
+                        end_x.push_back(last.x);
+                        end_z.push_back(last.z);
+                    }
+                    if (!end_x.empty()) {
+                        ImPlot::PlotScatter("end points", end_x.data(), end_z.data(), end_x.size());
+                    }
+                    double prevThickness = 0;
+                    ImPlotSpec spec;
+                    spec.LineColor = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+                    spec.Flags = ImPlotInfLinesFlags_Horizontal;
+                    for (const auto& layer : userLayers) {
+                        prevThickness += layer.thickness;
+                        ImPlot::PlotInfLines("layer_border", &prevThickness, 1, spec);
+                    }
+                    ImPlot::EndPlot();
+                }
+                if (ready && sur == Surface::XY && ImPlot::BeginPlot("Monte Carlo paths (XY)", ImVec2(-1, -1))) {
+                    std::lock_guard<std::mutex> lock(traj_mutex);
+                    ImPlot::SetupAxis(ImAxis_Y1, "axis Y (mm)");
+                    ImPlot::SetupAxis(ImAxis_X1, "axis X (mm)");
+                    std::vector<double> end_x, end_y;
+                    for (int i = 0; i < std::min((int)trajectories_of_detected.size(), 1000); i++) {
+                        const auto& path = trajectories_of_detected[i];
+                        if (path.empty()) continue;
+                        std::vector<double> x, y;
+                        x.reserve(path.size());
+                        y.reserve(path.size());
+                        for (const auto& p : path) {
+                            x.push_back(p.x);
+                            y.push_back(p.y);
+                        }
+                        ImPlot::PlotLine("path", x.data(), y.data(), (int)x.size());
+                        const auto& last = path.back();
+                        end_x.push_back(last.x);
+                        end_y.push_back(last.y);
+                    }
+                    if (!end_x.empty()) {
+                        ImPlot::PlotScatter("end points", end_x.data(), end_y.data(), (int)end_x.size());
+                    }
+                    ImPlot::EndPlot();
+                }
+                if (ready && (sur == Surface::YZ) && ImPlot::BeginPlot("Monte Carlo paths (YZ)", ImVec2(-1, -1))) {
+                    std::lock_guard<std::mutex> lock(traj_mutex);
+                    ImPlot::SetupAxis(ImAxis_Y1, "axis Z (mm)");
+                    ImPlot::SetupAxis(ImAxis_X1, "axis Y (mm)");
+                    std::vector<double> end_y, end_z;
+                    for (int i = 0; i < std::min((int)trajectories_of_detected.size(), 1000); i++) {
+                        const auto& path = trajectories_of_detected[i];
+                        if (path.empty()) continue;
+                        std::vector<double> y, z;
+                        y.reserve(path.size());
+                        z.reserve(path.size());
+                        for (const auto& p : path) {
+                            y.push_back(p.y);
+                            z.push_back(p.z);
+                        }
+                        ImPlot::PlotLine("path", y.data(), z.data(), (int)y.size());
+                        const auto& last = path.back();
+                        end_y.push_back(last.y);
+                        end_z.push_back(last.z);
                     }
                     if (!end_y.empty()) {
                         ImPlot::PlotScatter("end points", end_y.data(), end_z.data(), (int)end_y.size());
@@ -476,8 +587,10 @@
             }
             if (ImGui::BeginTabItem("Dependence of the max depth(image)")) {
                 ImPlot::PushColormap(ImPlotColormap_Jet);
-                if (ImPlot::BeginPlot("Heatmap", ImVec2(-1,-1))) {
-                    ImPlot::SetupAxes("X-Axis", "Y-Axis");
+                if (ImPlot::BeginPlot("Heatmap", ImVec2(-1,-1), ImPlotFlags_NoLegend)) {
+                    ImPlot::SetupAxes("Distance", "Depth");
+                    ImPlot::SetupAxisLimits(ImAxis_X1, 0.0f, max_distance, ImPlotCond_Always);
+                    ImPlot::SetupAxisLimits(ImAxis_Y1, 0.0f, max_deep, ImPlotCond_Always);
                     std::vector<double> flat;
                     flat.reserve(size_deptdist_hm* size_deptdist_hm);
                     for (int i = 0; i < size_deptdist_hm; ++i){
@@ -487,9 +600,10 @@
                     }
                     std::vector<double> sorted = flat;
                     std::sort(sorted.begin(), sorted.end());
+                    std::erase(sorted, 0.0f);
                     int hi = sorted[(int)(sorted.size()*0.99)];
                     if (hi < 1) hi = 1;
-                    ImPlot::PlotHeatmap("Matrix Data", flat.data(), size_deptdist_hm, size_deptdist_hm, 0.0f, hi, nullptr);
+                    ImPlot::PlotHeatmap("Matrix Data", flat.data(), size_deptdist_hm, size_deptdist_hm, 0, hi, nullptr, ImPlotPoint(0,0), ImPlotPoint(max_distance, max_deep));
                     ImPlot::EndPlot();
                 }
                 ImGui::EndTabItem();
