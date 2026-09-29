@@ -39,9 +39,9 @@
     double max_deep = 0.0;
     double max_distance = 10;
     double step = 0.1;
-    double max_depthdistance_zone = 0;
     std::vector<std::vector<double>> savedDenisty;
     int defer = 0;
+    int size_deptdist_hm = 1000;
 
     static std::vector<std::vector<int>> table;
 
@@ -132,23 +132,6 @@
         }
     }
 
-    void DrawGridPanel(int cols, int rows, float cellW, float cellH)
-    {
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 origin = ImGui::GetCursorScreenPos();
-
-        for (int y = 0; y < rows; ++y)
-            for (int x = 0; x < cols; ++x)
-            {
-                ImU32 col = IM_COL32(50 + x * 40, 50 + y * 40, 150, 255);
-                ImVec2 a(origin.x + x * cellW, origin.y + y * cellH);
-                ImVec2 b(a.x + cellW - 2, a.y + cellH - 2);
-                dl->AddRectFilled(a, b, col);
-            }
-
-        ImGui::Dummy(ImVec2(cols * cellW, rows * cellH));
-    }
-
     int main() {
         userLayers.emplace_back(10.0, 0.1, 0.9, 1.4, 3.0);
         table.assign(100, std::vector<int>(100, 0));
@@ -203,6 +186,7 @@
 
                 ImGui::InputInt("Photons", &photon_count);
                 if (photon_count < 1) photon_count = 1;
+                ImGui::InputInt("Size depth-distance map", &size_deptdist_hm);
 
                 ImGui::SeparatorText("Tissue Layers");
                 ImGui::Checkbox("Save denisty result", &saveDR);
@@ -275,14 +259,14 @@
                     ImGui::TextColored(ImVec4(0, 1, 0, 1), "Simulation finished. Paths: %zu", trajectories.size());
                 }
                 if (ready && table_need_recalculation) {
-                    table.assign(100, std::vector<int>(100, 0));
+                    table.assign(size_deptdist_hm, std::vector<int>(size_deptdist_hm, 0));
                     for (auto& maxD : max_deep_photons)
                     {
-                        double deep_didx = maxD.first / (max_deep / 100.0);
-                        double dist_didx = maxD.second / (max_distance / 100.0);
+                        double deep_didx = maxD.first / (max_deep / size_deptdist_hm);
+                        double dist_didx = maxD.second / (max_distance / size_deptdist_hm);
                         int di = static_cast<int>(deep_didx);
                         int dj = static_cast<int>(dist_didx);
-                        if (di >= 0 && di < 100 && dj >= 0 && dj < 100)
+                        if (di >= 0 && di < size_deptdist_hm && dj >= 0 && dj < size_deptdist_hm)
                             table[di][dj] += 1;
                     }
                     table_need_recalculation = false;
@@ -466,21 +450,21 @@
                     | ImGuiTableFlags_ScrollX 
                     | ImGuiTableFlags_ScrollY;
 
-                if (ImGui::BeginTable("table", 100+1, flags)) {
+                if (ImGui::BeginTable("table", size_deptdist_hm +1, flags)) {
                     ImGui::TableSetupScrollFreeze(1, 1);
 
                     ImGui::TableSetupColumn("Depth/Distance", 0, 128.0f);
-                    for (int i = 0; i < 100; i++) {
-                        double dist = (static_cast<double>(i) + 0.5) * (max_distance / 20);
+                    for (int i = 0; i < size_deptdist_hm; i++) {
+                        double dist = (static_cast<double>(i) + 0.5) * (max_distance / size_deptdist_hm);
                         ImGui::TableSetupColumn(std::to_string(dist).c_str(), 0, 40.0f);
                     }
                     ImGui::TableHeadersRow();
-                    for (int i = 0; i < 100; i++) {
+                    for (int i = 0; i < size_deptdist_hm; i++) {
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(0);
-                        double depth = (i + 0.5) * (max_deep / 100);
+                        double depth = (i + 0.5) * (max_deep / size_deptdist_hm);
                         ImGui::Text("%.2f", depth);
-                        for (int j = 0; j < 100; j++) {
+                        for (int j = 0; j < size_deptdist_hm; j++) {
                             ImGui::TableSetColumnIndex(j+1);
                             ImGui::Text("%d", table[i][j]);
                         }
@@ -494,15 +478,18 @@
                 ImPlot::PushColormap(ImPlotColormap_Jet);
                 if (ImPlot::BeginPlot("Heatmap", ImVec2(-1,-1))) {
                     ImPlot::SetupAxes("X-Axis", "Y-Axis");
-                    std::vector<int> flat;
-                    flat.reserve(100 * 100);
-                    for (int i = 0; i < 100; ++i){
-                        for (int j = 0; j < 100; ++j){
-                            max_depthdistance_zone = std::max(max_depthdistance_zone, static_cast<double>(table[i][j]));
+                    std::vector<double> flat;
+                    flat.reserve(size_deptdist_hm* size_deptdist_hm);
+                    for (int i = 0; i < size_deptdist_hm; ++i){
+                        for (int j = 0; j < size_deptdist_hm; ++j){
                             flat.push_back(table[i][j]);
                         }
                     }
-                    ImPlot::PlotHeatmap("Matrix Data", flat.data(), 100, 100, 0.0f, max_depthdistance_zone/100, nullptr);
+                    std::vector<double> sorted = flat;
+                    std::sort(sorted.begin(), sorted.end());
+                    int hi = sorted[(int)(sorted.size()*0.99)];
+                    if (hi < 1) hi = 1;
+                    ImPlot::PlotHeatmap("Matrix Data", flat.data(), size_deptdist_hm, size_deptdist_hm, 0.0f, hi, nullptr);
                     ImPlot::EndPlot();
                 }
                 ImGui::EndTabItem();
