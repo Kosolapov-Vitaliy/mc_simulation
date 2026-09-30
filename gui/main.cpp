@@ -591,11 +591,12 @@
                     ImPlot::SetupAxes("Distance", "Depth");
                     ImPlot::SetupAxisLimits(ImAxis_X1, 0.0f, max_distance, ImPlotCond_Always);
                     ImPlot::SetupAxisLimits(ImAxis_Y1, 0.0f, max_deep, ImPlotCond_Always);
+                    ImPlot::SetupAxis(ImAxis_Y1, "Depth", ImPlotAxisFlags_Invert);
                     std::vector<double> flat;
                     flat.reserve(size_deptdist_hm* size_deptdist_hm);
                     for (int i = 0; i < size_deptdist_hm; ++i){
                         for (int j = 0; j < size_deptdist_hm; ++j){
-                            flat.push_back(table[i][j]);
+                            flat.push_back(table[size_deptdist_hm-i-1][j]);
                         }
                     }
                     std::vector<double> sorted = flat;
